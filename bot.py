@@ -27,7 +27,7 @@ def currency(bot, update, args):
         update.message.reply_text(BAD_FORMAT)
         return
 
-    arg1_match = re.match(r'^(?P<value>\d+(?:(?:[.,])\d+)?)?(?P<currency>\w{3})$', args[0].strip())
+    arg1_match = re.match(r'^(?P<amount>\d+(?:(?:[.,])\d+)?)?(?P<currency>\w{3})$', args[0].strip())
     if arg1_match:
         arg1 = arg1_match.groupdict()
     else:
