@@ -22,7 +22,7 @@ def get_list_cache():
         if (datetime.now() - time_since_modified) >= list_cache_update_delta:
             supported_list = update_list_cache()
         else:
-            with open(list_cache, 'r') as f:
+            with open(list_cache) as f:
                 supported_list = json.load(f)
     return supported_list
 
@@ -30,12 +30,12 @@ def get_list_cache():
 def update_list_cache():
     supported_list = get_supported_list()
     with open(list_cache, 'w+') as f:
-        f.write(supported_list)
+        json.dump(supported_list, f)
     return supported_list
 
 
 def is_supported(*currencies):
-    supported_list = get_supported_list()
+    supported_list = get_list_cache()
     if all(curr in supported_list['results'] for curr in currencies):
         return True
     return False
