@@ -2,16 +2,20 @@ import logging
 import re
 
 from telegram import ParseMode
-from telegram.ext import Updater, CommandHandler
+from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
 
 from currency import convert
-from strings import USAGE_MESSAGE, EXAMPLE_MESSAGE, BAD_CURRENCY_MESSAGE, BAD_FORMAT, RESULT_MESSAGE, BAD_AMOUNT_MESSAGE
+from strings import USAGE_MESSAGE, EXAMPLE_MESSAGE, BAD_CURRENCY_MESSAGE, BAD_FORMAT, RESULT_MESSAGE, \
+    BAD_AMOUNT_MESSAGE, LIST_MESSAGE, START_MESSAGE
 from settings.credentials import TOKEN
-from settings.currency import default as default_currency, min_amount
-
+from settings.currency import default as default_currency, min_amount, api_provider_url
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+def start(bot, update):
+    update.message.reply_text(START_MESSAGE, parse_mode=ParseMode.MARKDOWN)
 
 
 def help(bot, update):
@@ -20,6 +24,11 @@ def help(bot, update):
 
 def example(bot, update):
     update.message.reply_text(EXAMPLE_MESSAGE, parse_mode=ParseMode.MARKDOWN)
+
+
+def c_list(bot, update):
+    result = 'List of supported currencies is avaliable at: ' + api_provider_url
+    update.message.reply_text(result, disable_web_page_preview=True)
 
 
 def currency(bot, update, args):
@@ -71,14 +80,22 @@ def log_error(bot, update, error):
     logger.warning('Update "%s" caused error "%s"' % (update, error))
 
 
+def show_messages(bot, update):
+    print(f'{update.message.from_user.username}: {update.message.text}')
+
+
 def main():
     updater = Updater(TOKEN)
 
     dp = updater.dispatcher
 
+    dp.add_handler(CommandHandler("start", start))
     dp.add_handler(CommandHandler("help", help))
     dp.add_handler(CommandHandler("example", example))
+    dp.add_handler(CommandHandler('list', c_list))
     dp.add_handler(CommandHandler('c', currency, pass_args=True))
+
+    dp.add_handler(MessageHandler(Filters.text, show_messages))
 
     dp.add_error_handler(log_error)
 
