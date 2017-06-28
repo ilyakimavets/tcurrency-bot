@@ -4,39 +4,39 @@ from datetime import datetime
 
 import requests
 
-from settings.currency import (convert_api_url, list_url, list_cache,
-                               list_cache_update_delta)
+from settings.currency import (convert_api_url, list_api_url, list_api_cache,
+                               list_api_cache_update_delta)
 
 
 def get_supported_list():
-    r_json = requests.get(list_url).json()
-    return r_json
+    r_json = requests.get(list_api_url).json()
+    return r_json['results']
 
 
 def get_list_cache():
     try:
-        time_since_modified = datetime.fromtimestamp(os.path.getmtime(list_cache))
+        time_since_modified = datetime.fromtimestamp(os.path.getmtime(list_api_cache))
     except FileNotFoundError:
         supported_list = update_list_cache()
     else:
-        if (datetime.now() - time_since_modified) >= list_cache_update_delta:
+        if (datetime.now() - time_since_modified) >= list_api_cache_update_delta:
             supported_list = update_list_cache()
         else:
-            with open(list_cache) as f:
+            with open(list_api_cache) as f:
                 supported_list = json.load(f)
     return supported_list
 
 
 def update_list_cache():
     supported_list = get_supported_list()
-    with open(list_cache, 'w+') as f:
+    with open(list_api_cache, 'w+') as f:
         json.dump(supported_list, f)
     return supported_list
 
 
 def is_supported(*currencies):
     supported_list = get_list_cache()
-    if all(curr in supported_list['results'] for curr in currencies):
+    if all(curr in supported_list for curr in currencies):
         return True
     return False
 
