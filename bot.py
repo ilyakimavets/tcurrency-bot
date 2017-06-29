@@ -5,10 +5,11 @@ from telegram import ParseMode
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
 
 from currency import convert
-from strings import USAGE_MESSAGE, EXAMPLE_MESSAGE, BAD_CURRENCY_MESSAGE, BAD_FORMAT, RESULT_MESSAGE, \
-    BAD_AMOUNT_MESSAGE, LIST_MESSAGE, START_MESSAGE
-from settings.credentials import TOKEN
-from settings.currency import default as default_currency, min_amount, api_provider_url
+
+from strings import *
+
+from settings import TOKEN, DEFAULT_CURRENCY, API_PROVIDER_URL, MINIMAL_AMOUNT
+
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -19,16 +20,16 @@ def start(bot, update):
 
 
 def help(bot, update):
-    update.message.reply_text(USAGE_MESSAGE, parse_mode=ParseMode.MARKDOWN)
+    update.message.reply_text(HELP_MESSAGE, parse_mode=ParseMode.MARKDOWN)
 
 
 def example(bot, update):
-    update.message.reply_text(EXAMPLE_MESSAGE, parse_mode=ParseMode.MARKDOWN)
+    update.message.reply_text(EXAMPLE_MESSAGE.format(default_currency=DEFAULT_CURRENCY), parse_mode=ParseMode.MARKDOWN)
 
 
-def c_list(bot, update):
-    result = 'List of supported currencies is avaliable at: ' + api_provider_url
-    update.message.reply_text(result, disable_web_page_preview=True)
+def support(bot, update):
+    update.message.reply_text(SUPPORT_MESSAGE.format(api_provider_url=API_PROVIDER_URL), disable_web_page_preview=True,
+                              parse_mode=ParseMode.MARKDOWN)
 
 
 def currency(bot, update, args):
@@ -42,12 +43,11 @@ def currency(bot, update, args):
     else:
         update.message.reply_text(BAD_FORMAT)
         return
-
     _amount = arg1.get('amount')
     # AMOUNT: if amount is in user input, check the minimum value and convert to float
     if _amount:
         _amount = float(_amount.replace(',', '.'))
-        if _amount > min_amount:
+        if _amount > MINIMAL_AMOUNT:
             amount = _amount
         else:
             update.message.reply_text(BAD_AMOUNT_MESSAGE)
@@ -55,9 +55,8 @@ def currency(bot, update, args):
     # AMOUNT: if not, then set it to 1
     else:
         amount = 1
-
     cur1 = arg1.get('currency').upper()
-    cur2 = default_currency
+    cur2 = DEFAULT_CURRENCY
 
     if len(args) == 2:
         arg2_match = re.match(r'^(?P<currency>\w{3})$', args[1].strip())
@@ -66,9 +65,7 @@ def currency(bot, update, args):
         else:
             update.message.reply_text(BAD_FORMAT)
             return
-
         cur2 = arg2.get('currency').upper()
-
     result = convert(cur1, cur2, amount)
     if result is not None:
         update.message.reply_text(RESULT_MESSAGE.format(amount=amount, cur1=cur1, result=result, cur2=cur2))
@@ -92,7 +89,7 @@ def main():
     dp.add_handler(CommandHandler("start", start))
     dp.add_handler(CommandHandler("help", help))
     dp.add_handler(CommandHandler("example", example))
-    dp.add_handler(CommandHandler('list', c_list))
+    dp.add_handler(CommandHandler('support', support))
     dp.add_handler(CommandHandler('c', currency, pass_args=True))
 
     dp.add_handler(MessageHandler(Filters.text, show_messages))

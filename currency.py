@@ -1,54 +1,36 @@
-import json
-import os
-from datetime import datetime
-
+import supycache
 import requests
 
-from settings.currency import (convert_api_url, list_api_url, list_api_cache,
-                               list_api_cache_update_delta)
+from settings import CONVERT_API_URL, LIST_API_URL
 
 
-def get_supported_list():
-    r_json = requests.get(list_api_url).json()
-    return r_json['results']
-
-
-def get_list_cache():
-    try:
-        time_since_modified = datetime.fromtimestamp(os.path.getmtime(list_api_cache))
-    except FileNotFoundError:
-        supported_list = update_list_cache()
+@supycache.supycache(cache_key='all_currencies', max_age=60 * 60 * 3)  # Cache for 3 hours
+def get_all():
+    r = requests.get(LIST_API_URL)
+    j = r.json().get('results')
+    if j:
+        return j
     else:
-        if (datetime.now() - time_since_modified) >= list_api_cache_update_delta:
-            supported_list = update_list_cache()
-        else:
-            with open(list_api_cache) as f:
-                supported_list = json.load(f)
-    return supported_list
+        raise ValueError('List of all currencies API response has no expected data')
 
 
-def update_list_cache():
-    supported_list = get_supported_list()
-    with open(list_api_cache, 'w+') as f:
-        json.dump(supported_list, f)
-    return supported_list
+@supycache.supycache(cache_key='{0}_support', max_age=60 * 60 * 1)  # Cache for 1 hour
+def is_supported(currency):
+    return currency in get_all()
 
 
-def is_supported(*currencies):
-    supported_list = get_list_cache()
-    if all(curr in supported_list for curr in currencies):
-        return True
-    return False
-
-
-def get_currency(currency_from, currency_to):
-    r_json = requests.get(convert_api_url.format(currency_from=currency_from, currency_to=currency_to)).json()
-    currency = list(r_json.values())[0]
-    return currency
+@supycache.supycache(cache_key='{0}_{1}_ratio', max_age=60 * 10)  # Cache for 10 minutes
+def get_ratio(currency_from, currency_to):
+    params = {'q': f'{currency_from}_{currency_to}', 'compact': 'ultra'}
+    r = requests.get(CONVERT_API_URL, params=params)
+    j = r.json()
+    ratio = list(j.values())[0]
+    return ratio
 
 
 def convert(currency_from, currency_to, amount):
-    if is_supported(currency_from, currency_to):
-        currency = get_currency(currency_from, currency_to)
-        result = currency * amount
+    supported = all([is_supported(currency_from), is_supported(currency_to)])
+    if supported:
+        ratio = get_ratio(currency_from, currency_to)
+        result = ratio * amount
         return result
