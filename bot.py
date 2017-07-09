@@ -1,76 +1,105 @@
 import logging
 import re
+from uuid import uuid4
 
-from telegram import ParseMode
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
+from telegram import ParseMode, InlineQueryResultArticle, InputTextMessageContent
+from telegram.ext import Updater, CommandHandler, InlineQueryHandler
 
-from currency import convert
+from currency import convert, is_supported
 
-from strings import *
-
-from settings import TOKEN, DEFAULT_CURRENCY, API_PROVIDER_URL, MINIMAL_AMOUNT
-
+import strings
+import settings
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+# helpers
+def _build_rates_list(rates):
+    response = [f'{cur} = {rates[cur]:.4f} ' if rates[cur] else f'{cur} - not supported' for cur in rates]
+    return response
+
+
+def _build_full_response(data):
+    heading = '{amount} {from_currency}:'.format(amount=data['amount'], from_currency=data['from_currency'])
+    body = '\n'.join(f'• {item}' for item in _build_rates_list(data['to_currencies']))
+    response = '\n'.join([heading, body])
+    return response
+
+
+def _currency_handler(args):
+    if len(args) < 1:
+        return strings.BAD_FORMAT
+
+    from_match = re.match(r'^(?P<amount>\d+(?:(?:[.,])\d+)?)?(?P<currency>\w{3})$', args[0])
+    if not from_match:
+        return strings.BAD_FORMAT
+
+    from_dict = from_match.groupdict()
+    from_currency = from_dict.get('currency')
+
+    if not is_supported(from_currency):
+        return strings.BAD_CURRENCY_MESSAGE.format(currency=from_currency, api_provider_url=settings.API_PROVIDER_URL)
+
+    match_amount = from_dict.get('amount')
+    if not match_amount:
+        amount = 1.0
+    else:
+        match_amount = float(match_amount.replace(',', '.'))
+        if match_amount > settings.MINIMAL_AMOUNT:
+            amount = match_amount
+        else:
+            return strings.BAD_AMOUNT_MESSAGE
+
+    to_currencies = {}
+
+    if len(args) == 1:
+        if from_currency == settings.DEFAULT_CURRENCY:
+            return strings.DEFAULT_CURRENCY_MESSAGE.format(default_currency=settings.DEFAULT_CURRENCY)
+        to_currencies[settings.DEFAULT_CURRENCY] = convert(from_currency, settings.DEFAULT_CURRENCY, amount)
+    else:
+        for to_arg in args[1:]:
+            to_match = re.match(r'^(?P<currency>\w{3})$', to_arg)
+            if not to_match:
+                continue
+            to_currency = to_match.groupdict().get('currency')
+            if not is_supported(to_currency):
+                return strings.BAD_CURRENCY_MESSAGE.format(currency=to_currency, api_provider_url=settings.API_PROVIDER_URL)
+            to_currencies[to_currency] = convert(from_currency, to_currency, amount)
+        if not to_currencies:
+            return strings.BAD_FORMAT
+
+    return {'from_currency': from_currency, 'to_currencies': to_currencies, 'amount': amount}
+
+
 def start(bot, update):
-    update.message.reply_text(START_MESSAGE, parse_mode=ParseMode.MARKDOWN)
+    update.message.reply_text(strings.HELP_MESSAGE, parse_mode=ParseMode.MARKDOWN)
 
 
-def help(bot, update):
-    update.message.reply_text(HELP_MESSAGE, parse_mode=ParseMode.MARKDOWN)
-
-
-def example(bot, update):
-    update.message.reply_text(EXAMPLE_MESSAGE.format(default_currency=DEFAULT_CURRENCY), parse_mode=ParseMode.MARKDOWN)
-
-
-def support(bot, update):
-    update.message.reply_text(SUPPORT_MESSAGE.format(api_provider_url=API_PROVIDER_URL), disable_web_page_preview=True,
-                              parse_mode=ParseMode.MARKDOWN)
-
-
-def currency(bot, update, args):
-    if len(args) not in (1, 2):
-        update.message.reply_text(BAD_FORMAT)
+def inline(bot, update):
+    query = update.inline_query.query
+    if not query:
         return
 
-    arg1_match = re.match(r'^(?P<amount>\d+(?:(?:[.,])\d+)?)?(?P<currency>\w{3})$', args[0].strip())
-    if arg1_match:
-        arg1 = arg1_match.groupdict()
-    else:
-        update.message.reply_text(BAD_FORMAT)
-        return
-    _amount = arg1.get('amount')
-    # AMOUNT: if amount is in user input, check the minimum value and convert to float
-    if _amount:
-        _amount = float(_amount.replace(',', '.'))
-        if _amount > MINIMAL_AMOUNT:
-            amount = _amount
-        else:
-            update.message.reply_text(BAD_AMOUNT_MESSAGE)
-            return
-    # AMOUNT: if not, then set it to 1
-    else:
-        amount = 1
-    cur1 = arg1.get('currency').upper()
-    cur2 = DEFAULT_CURRENCY
+    args = []
+    for arg in query.upper().split():
+        if arg not in args:
+            args.append(arg)
 
-    if len(args) == 2:
-        arg2_match = re.match(r'^(?P<currency>\w{3})$', args[1].strip())
-        if arg2_match:
-            arg2 = arg2_match.groupdict()
-        else:
-            update.message.reply_text(BAD_FORMAT)
-            return
-        cur2 = arg2.get('currency').upper()
-    result = convert(cur1, cur2, amount)
-    if result is not None:
-        update.message.reply_text(RESULT_MESSAGE.format(amount=amount, cur1=cur1, result=result, cur2=cur2))
+    data = _currency_handler(args)
+    if isinstance(data, str):
+        title = 'Error'
+        description = data
+        response = data
     else:
-        update.message.reply_text(BAD_CURRENCY_MESSAGE)
+        title = '{amount} {currency}'.format(amount=data['amount'], currency=data['from_currency'])
+        description = ', '.join(_build_rates_list(data['to_currencies']))
+        response = _build_full_response(data)
+
+    results = [InlineQueryResultArticle(id=uuid4(), title=title, description=description,
+                                        input_message_content=InputTextMessageContent(response,
+                                                                                      disable_web_page_preview=True))]
+    update.inline_query.answer(results)
 
 
 def log_error(bot, update, error):
@@ -82,17 +111,13 @@ def show_messages(bot, update):
 
 
 def main():
-    updater = Updater(TOKEN)
+    updater = Updater(settings.TOKEN)
 
     dp = updater.dispatcher
 
     dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(CommandHandler("help", help))
-    dp.add_handler(CommandHandler("example", example))
-    dp.add_handler(CommandHandler('support', support))
-    dp.add_handler(CommandHandler('c', currency, pass_args=True))
 
-    dp.add_handler(MessageHandler(Filters.text, show_messages))
+    dp.add_handler(InlineQueryHandler(inline))
 
     dp.add_error_handler(log_error)
 
