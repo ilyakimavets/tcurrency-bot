@@ -8,3 +8,6 @@ DEFAULT_CURRENCY = 'RUB'
 MINIMAL_AMOUNT = 0.1
 
 TOKEN = os.environ.get('TELEGRAM_TOKEN')
+ENV = os.getenv('ENV')
+URL = os.getenv('URL')
+PORT = int(os.getenv('PORT'))

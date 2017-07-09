@@ -64,7 +64,8 @@ def _currency_handler(args):
                 continue
             to_currency = to_match.groupdict().get('currency')
             if not is_supported(to_currency):
-                return strings.BAD_CURRENCY_MESSAGE.format(currency=to_currency, api_provider_url=settings.API_PROVIDER_URL)
+                return strings.BAD_CURRENCY_MESSAGE.format(currency=to_currency,
+                                                           api_provider_url=settings.API_PROVIDER_URL)
             to_currencies[to_currency] = convert(from_currency, to_currency, amount)
         if not to_currencies:
             return strings.BAD_FORMAT
@@ -121,7 +122,12 @@ def main():
 
     dp.add_error_handler(log_error)
 
-    updater.start_polling()
+    if settings.ENV == 'prod':
+        updater.start_webhook(listen='0.0.0.0', port=settings.PORT, url_path=settings.TOKEN)
+        updater.bot.set_webhook(settings.URL + settings.TOKEN)
+    else:
+        updater.start_polling(poll_interval=1)
+
     updater.idle()
 
 
